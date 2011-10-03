@@ -6,12 +6,11 @@
 **  
 **  Parameters: input byte stream.
 **
-**
+**  Return: A lot of files, each file is a H.264 NAL unit.
 ******************************************************************************/
 #include <stdlib.h>
 #include <stdio.h>
 #include <memory.h>
-#include <windows.h>
 
 #define DICT_SIZE	(1 << (sizeof(code_t)*8))
 #define NODE_NULL	(DICT_SIZE-1)
@@ -28,34 +27,28 @@ bitbuffer_t;
 // LZW node, represents a string
 typedef struct _node
 {
-	code_t	prev;
-	char	ch;
+	code_t	prev;	// prefix code
+	char	ch;		// last symbol
 }
 node_t;
 
 // LZW context
 typedef struct _lzw
 {
-	node_t        dict[DICT_SIZE];
-	unsigned      max;
-	unsigned      codesize;
-	bitbuffer_t   bb;
-	void          *file;
-	unsigned      lzwn;			// buffer byte counter
-	unsigned      lzwm;			// buffer size (decoder only)
-	unsigned char buff[256];	// code-stream output buffer, adjust its size if you need
+	node_t        dict[DICT_SIZE];	// code dictionary
+	unsigned      max;				// maximal code
+	unsigned      codesize;			// number of bits in code
+	bitbuffer_t   bb;				// bit-buffer struct
+	void          *stream;			// pointer to the stream object
+	unsigned      lzwn;				// buffer byte counter
+	unsigned      lzwm;				// buffer size (decoder only)
+	unsigned char buff[256];		// stream buffer, adjust its size if you need
 }
 lzw_t;
 
-static void lzw_writebuf(lzw_t *ctx, unsigned char *buf, unsigned size)
-{
-	fwrite(buf, size, 1, (FILE*)ctx->file);
-}
-
-static unsigned lzw_readbuf(lzw_t *ctx, unsigned char *buf, unsigned size)
-{
-	return fread(buf, 1, size, (FILE*)ctx->file);
-}
+// Application defined stream callbacks
+void lzw_writebuf(void *stream, unsigned char *buf, unsigned size);
+unsigned lzw_readbuf(void *stream, unsigned char *buf, unsigned size);
 
 static void lzw_writebyte(lzw_t *ctx, const unsigned char b)
 {
@@ -63,7 +56,7 @@ static void lzw_writebyte(lzw_t *ctx, const unsigned char b)
 
 	if (ctx->lzwn == sizeof(ctx->buff)) {
 		ctx->lzwn = 0;
-		lzw_writebuf(ctx, ctx->buff, sizeof(ctx->buff));
+		lzw_writebuf(ctx->stream, ctx->buff, sizeof(ctx->buff));
 	}
 }
 
@@ -71,7 +64,7 @@ static unsigned char lzw_readbyte(lzw_t *ctx)
 {
 	if (ctx->lzwn == ctx->lzwm)
 	{
-		ctx->lzwm = lzw_readbuf(ctx, ctx->buff, sizeof(ctx->buff));
+		ctx->lzwm = lzw_readbuf(ctx->stream, ctx->buff, sizeof(ctx->buff));
 		ctx->lzwn = 0;
 	}
 
@@ -82,12 +75,12 @@ static unsigned char lzw_readbyte(lzw_t *ctx)
 **  lzw_writebits
 **  --------------------------------------------------------------------------
 **  Write bits into bit-buffer.
-**  If the number of bits exceeds 16 the result is unpredictable.
+**  The number of bits should not exceed 24.
 **  
 **  Arguments:
-**      pbb     - pointer to bit-buffer context;
+**      ctx     - pointer to LZW context;
 **      bits    - bits to write;
-**      nbits   - number of bits to write, 0-16;
+**      nbits   - number of bits to write, 0-24;
 **
 **  Return: -
 ******************************************************************************/
@@ -111,11 +104,23 @@ static void lzw_writebits(lzw_t *ctx, unsigned bits, unsigned nbits)
 	ctx->bb.n = nbits;
 }
 
+/******************************************************************************
+**  lzw_readbits
+**  --------------------------------------------------------------------------
+**  Read bits from bit-buffer.
+**  The number of bits should not exceed 24.
+**  
+**  Arguments:
+**      ctx     - pointer to LZW context;
+**      nbits   - number of bits to read, 0-24;
+**
+**  Return: bits
+******************************************************************************/
 static unsigned lzw_readbits(lzw_t *ctx, unsigned nbits)
 {
 	unsigned bits;
 
-	// flush whole bytes
+	// read bytes
 	while (ctx->bb.n < nbits) {
 		unsigned char b = lzw_readbyte(ctx);
 
@@ -149,20 +154,18 @@ static void lzw_flushbits(lzw_t *ctx)
 }
 
 
-// global object
-lzw_t lzw;
-
 /******************************************************************************
 **  lzw_init
 **  --------------------------------------------------------------------------
 **  Initializes LZW context.
 **  
 **  Arguments:
-**      ctx  - LZW context;
+**      ctx     - LZW context;
+**      stream  - Pointer to Input/Output stream object;
 **
 **  RETURN: -
 ******************************************************************************/
-void lzw_init(lzw_t *ctx)
+void lzw_init(lzw_t *ctx, void *stream)
 {
 	unsigned i;
 
@@ -174,14 +177,15 @@ void lzw_init(lzw_t *ctx)
 		ctx->dict[i].ch = i;
 	}
 
-	ctx->max = i;
+	ctx->max = i-1;
 	ctx->codesize = 8;
+	ctx->stream = stream;
 }
 
 /******************************************************************************
 **  lzw_find_str
 **  --------------------------------------------------------------------------
-**  Finds a string in LZW dictionaly.
+**  Searches a string in LZW dictionaly.
 **  
 **  Arguments:
 **      ctx  - LZW context;
@@ -190,11 +194,11 @@ void lzw_init(lzw_t *ctx)
 **
 **  RETURN: code representing the string or NODE_NULL.
 ******************************************************************************/
-code_t lzw_find_str(lzw_t *ctx, code_t code, char c)
+static code_t lzw_find_str(lzw_t *ctx, code_t code, char c)
 {
 	code_t nc; 
 
-	for (nc = code + 1; nc < ctx->max; nc++)
+	for (nc = code + 1; nc <= ctx->max; nc++)
 	{
 		if (code == ctx->dict[nc].prev && c == ctx->dict[nc].ch)
 			return nc;
@@ -218,11 +222,11 @@ code_t lzw_find_str(lzw_t *ctx, code_t code, char c)
 **
 **  Return: the number of bytes in the string
 ******************************************************************************/
-unsigned lzw_get_str(lzw_t *ctx, code_t code, unsigned char buff[], unsigned size)
+static unsigned lzw_get_str(lzw_t *ctx, code_t code, unsigned char buff[], unsigned size)
 {
 	unsigned i = size;
 
-	while (code != NODE_NULL)
+	while (code != NODE_NULL && i)
 	{
 		buff[--i] = ctx->dict[code].ch;
 		code = ctx->dict[code].prev;
@@ -245,27 +249,24 @@ unsigned lzw_get_str(lzw_t *ctx, code_t code, unsigned char buff[], unsigned siz
 **
 **  RETURN: code representing the string or NODE_NULL if dictionary is full.
 ******************************************************************************/
-code_t lzw_add_str(lzw_t *ctx, code_t code, char c)
+static code_t lzw_add_str(lzw_t *ctx, code_t code, char c)
 {
-	unsigned i = ctx->max++;
-
-	ctx->dict[i].prev = code;
-	ctx->dict[i].ch = c;
-
-	//lzw_print_str(ctx, i);
+	ctx->max++;
 
 	if (ctx->max >= DICT_SIZE)
-	{
-		i = NODE_NULL;
-	}
+		return NODE_NULL;
 	
-	return i;
+	ctx->dict[ctx->max].prev = code;
+	ctx->dict[ctx->max].ch = c;
+
+	return ctx->max;
 }
 
 /******************************************************************************
 **  lzw_write
 **  --------------------------------------------------------------------------
 **  Writes an output code into the stream.
+**  This function is used only in encoder.
 **  
 **  Arguments:
 **      ctx  - LZW context;
@@ -275,14 +276,46 @@ code_t lzw_add_str(lzw_t *ctx, code_t code, char c)
 ******************************************************************************/
 static void lzw_write(lzw_t *ctx, code_t code)
 {
+	// increase the code size (number of bits) if needed
+	if (ctx->max == (1 << ctx->codesize))
+		ctx->codesize++;
+
 	lzw_writebits(ctx, code, ctx->codesize);
 }
 
+/******************************************************************************
+**  lzw_read
+**  --------------------------------------------------------------------------
+**  Reads a code from the input stream. Be careful about where you put its
+**  call because this function changes the codesize.
+**  This function is used only in decoder.
+**  
+**  Arguments:
+**      ctx  - LZW context;
+**
+**  RETURN: code
+******************************************************************************/
 static code_t lzw_read(lzw_t *ctx)
 {
+	// increase the code size (number of bits) if needed
+	if (ctx->max+1 == (1 << ctx->codesize))
+		ctx->codesize++;
+
 	return lzw_readbits(ctx, ctx->codesize);
 }
 
+/******************************************************************************
+**  lzw_encode
+**  --------------------------------------------------------------------------
+**  Encodes input byte stream into LZW code stream.
+**  
+**  Arguments:
+**      ctx  - LZW context;
+**      fin  - input file;
+**      fout - output file;
+**
+**  Return: error code
+******************************************************************************/
 int lzw_encode(lzw_t *ctx, FILE *fin, FILE *fout)
 {
 	code_t   code = NODE_NULL;
@@ -290,9 +323,7 @@ int lzw_encode(lzw_t *ctx, FILE *fin, FILE *fout)
 	unsigned strlen = 0;
 	int      c;
 
-	lzw_init(ctx);
-
-	lzw.file = fout;
+	lzw_init(ctx, fout);
 
 	while ((c = fgetc(fin)) != EOF)
 	{
@@ -312,10 +343,6 @@ int lzw_encode(lzw_t *ctx, FILE *fin, FILE *fout)
 			// add <prefix>+<current symbol> to the dictionary
 			tmp = lzw_add_str(ctx, code, c);
 
-			// increase the code size (number of bits) if needed
-			if (ctx->max > (1 << ctx->codesize))
-				ctx->codesize++;
-
 			if (tmp == NODE_NULL) {
 				fprintf(stderr, "ERROR: dictionary is full, input %d\n", isize);
 				break;
@@ -333,21 +360,35 @@ int lzw_encode(lzw_t *ctx, FILE *fin, FILE *fout)
 	// write last code
 	lzw_write(ctx, code);
 	lzw_flushbits(ctx);
-	lzw_writebuf(ctx, ctx->buff, ctx->lzwn);
+	lzw_writebuf(ctx->stream, ctx->buff, ctx->lzwn);
 
 	return 0;
 }
 
+/******************************************************************************
+**  lzw_decode
+**  --------------------------------------------------------------------------
+**  Decodes input LZW code stream into byte stream.
+**  
+**  Arguments:
+**      ctx  - LZW context;
+**      fin  - input file;
+**      fout - output file;
+**
+**  Return: error code
+******************************************************************************/
 int lzw_decode(lzw_t *ctx, FILE *fin, FILE *fout)
 {
-	code_t        code = NODE_NULL;
 	unsigned      isize = 0;
-	unsigned char c = 0;
-	unsigned char buff[65535];
+	code_t        code;
+	unsigned char c;
+	unsigned char buff[DICT_SIZE];
 
-	lzw_init(ctx);
+	lzw_init(ctx, fin);
 
-	lzw.file = fin;
+	c = code = lzw_readbits(ctx, ctx->codesize++);
+	// write symbol into the output stream
+	fwrite(&c, 1, 1, fout);
 
 	for(;;)
 	{
@@ -355,31 +396,34 @@ int lzw_decode(lzw_t *ctx, FILE *fin, FILE *fout)
 		code_t        nc;
 
 		nc = lzw_read(ctx);
-//printf("Code %d\n", nc);
+
+		// check input strean for EOF (lzwm == 0)
 		if (!ctx->lzwm)
 			break;
 
-		if (nc > ctx->max) {
-			fprintf(stderr, "ERROR: wrong code %d, input %d\n", nc, isize);
-			break;
-		}
-
-		if (nc == ctx->max) {
-			fprintf(stderr, "Create code %d = %d + %c\n", nc, code, c);
-			lzw_add_str(ctx, code, c);
-			// increase the code size (number of bits) if needed
-			if (ctx->max == (1 << ctx->codesize))
-				ctx->codesize++;
-			code = NODE_NULL;
+		// unknown code
+		if (nc > ctx->max)
+		{
+			if (nc-1 == ctx->max) {
+				//fprintf(stderr, "Create code %d = %d + %c\n", nc, code, c);
+				if (lzw_add_str(ctx, code, c) == NODE_NULL) {
+					fprintf(stderr, "ERROR: dictionary is full, input %d\n", isize);
+					break;
+				}
+				code = NODE_NULL;
+			}
+			else {
+				fprintf(stderr, "ERROR: wrong code %d, input %d\n", nc, isize);
+				break;
+			}
 		}
 
 		// get string for the new code from dictionary
 		strlen = lzw_get_str(ctx, nc, buff, sizeof(buff));
-		// write string into the output stream
-		fwrite(buff+(sizeof(buff) - strlen), strlen, 1, fout);
-//fwrite(buff+(sizeof(buff) - strlen), strlen, 1, stdout); printf(":%d\n", strlen);
 		// remember first sybmol in the added string
 		c = buff[sizeof(buff) - strlen];
+		// write string into the output stream
+		fwrite(buff+(sizeof(buff) - strlen), strlen, 1, fout);
 
 		if (code != NODE_NULL)
 		{
@@ -388,12 +432,7 @@ int lzw_decode(lzw_t *ctx, FILE *fin, FILE *fout)
 				fprintf(stderr, "ERROR: dictionary is full, input %d\n", isize);
 				break;
 			}
-			// increase the code size (number of bits) if needed
-			if (ctx->max == (1 << ctx->codesize))
-				ctx->codesize++;
 		}
-		else if (isize == 0)
-			ctx->codesize++;
 
 		code = nc;
 		isize++;
@@ -402,18 +441,36 @@ int lzw_decode(lzw_t *ctx, FILE *fin, FILE *fout)
 	return 0;
 }
 
+// global object
+lzw_t lzw;
+
+void lzw_writebuf(void *stream, unsigned char *buf, unsigned size)
+{
+	fwrite(buf, size, 1, (FILE*)stream);
+}
+
+unsigned lzw_readbuf(void *stream, unsigned char *buf, unsigned size)
+{
+	return fread(buf, 1, size, (FILE*)stream);
+}
+
 int main (int argc, char* argv[])
 {
 	FILE *fin, *fout;
 
+	if (argc < 4) {
+		printf("Usage: lzw [e|d] <input file> <output file>\n");
+		return -1;
+	}
+
 	if (!(fin = fopen(argv[2], "rb"))) {
 		fprintf(stderr, "Cannot open %s\n", argv[1]);
-		return -1;
+		return -2;
 	}
 
 	if (!(fout = fopen(argv[3], "w+b"))) {
 		fprintf(stderr, "Cannot open %s\n", argv[2]);
-		return -2;
+		return -3;
 	}
 
 	if (argv[1][0] == 'e')
