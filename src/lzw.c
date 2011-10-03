@@ -94,7 +94,8 @@ static void lzw_writebits(lzw_t *ctx, unsigned bits, unsigned nbits)
 	nbits += ctx->bb.n;
 
 	// flush whole bytes
-	while (nbits >= 8) {
+	while (nbits >= 8)
+	{
 		unsigned char b;
 
 		nbits -= 8;
@@ -184,6 +185,19 @@ void lzw_init(lzw_t *ctx, void *stream)
 	ctx->max = i-1;
 	ctx->codesize = 8;
 	ctx->stream = stream;
+}
+
+void lzw_reset(lzw_t *ctx)
+{
+	unsigned i;
+
+	for (i = 0; i < 256; i++)
+	{
+		ctx->dict[i].first = NODE_NULL;
+	}
+
+	ctx->max = i-1;
+	ctx->codesize = 8;
 }
 
 /******************************************************************************
@@ -341,25 +355,20 @@ int lzw_encode(lzw_t *ctx, FILE *fin, FILE *fout)
 
 	while ((c = fgetc(fin)) != EOF)
 	{
-		code_t nc;
+		code_t nc = lzw_find_str(ctx, code, c);
 
 		isize++;
 
-		nc = lzw_find_str(ctx, code, c);
-
 		if (nc == NODE_NULL)
 		{
-			code_t tmp;
-
 			// the string was not found - write <prefix>
 			lzw_write(ctx, code);
 
 			// add <prefix>+<current symbol> to the dictionary
-			tmp = lzw_add_str(ctx, code, c);
-
-			if (tmp == NODE_NULL) {
-				fprintf(stderr, "ERROR: dictionary is full, input %d\n", isize);
-				break;
+			if (lzw_add_str(ctx, code, c) == NODE_NULL)
+			{
+				fprintf(stderr, "dictionary is full, input %d\n", isize);
+				lzw_reset(ctx);
 			}
 
 			code = c;
@@ -371,6 +380,7 @@ int lzw_encode(lzw_t *ctx, FILE *fin, FILE *fout)
 			strlen++;
 		}
 	}
+
 	// write last code
 	lzw_write(ctx, code);
 	lzw_flushbits(ctx);
@@ -401,6 +411,9 @@ int lzw_decode(lzw_t *ctx, FILE *fin, FILE *fout)
 
 	lzw_init(ctx, fin);
 
+start:
+	lzw_reset(ctx);
+
 	c = code = lzw_readbits(ctx, ctx->codesize++);
 	// write symbol into the output stream
 	fwrite(&c, 1, 1, fout);
@@ -412,39 +425,54 @@ int lzw_decode(lzw_t *ctx, FILE *fin, FILE *fout)
 
 		nc = lzw_read(ctx);
 
-		// check input strean for EOF (lzwm == 0)
+		// check input stream for EOF (lzwm == 0)
 		if (!ctx->lzwm)
 			break;
 
-		// unknown code
-		if (nc > ctx->max)
+		if (nc <= ctx->max)
 		{
-			if (nc-1 == ctx->max) {
-				//fprintf(stderr, "Create code %d = %d + %c\n", nc, code, c);
-				if (lzw_add_str(ctx, code, c) == NODE_NULL) {
+			// get string for the new code from dictionary
+			strlen = lzw_get_str(ctx, nc, buff, sizeof(buff));
+			// remember the first sybmol of this string
+			c = buff[sizeof(buff) - strlen];
+			// write the string into the output stream
+			//fwrite(buff+(sizeof(buff) - strlen), strlen, 1, fout);
+			lzw_writebuf(fout, buff+(sizeof(buff) - strlen), strlen);
+
+			// add <prev code str>+<first str symbol> to the dictionary
+			if (lzw_add_str(ctx, code, c) == NODE_NULL)
+			{
+				fprintf(stderr, "ERROR: dictionary is full, input %d\n", isize);
+				break;
+			}
+
+			if (ctx->max == (DICT_SIZE-1))
+				goto start;
+		}
+		else // unknown code
+		{
+			if (nc-1 == ctx->max)
+			{
+				// create code: <nc> = <code> + <c>
+				if (lzw_add_str(ctx, code, c) == NODE_NULL)
+				{
 					fprintf(stderr, "ERROR: dictionary is full, input %d\n", isize);
 					break;
 				}
-				code = NODE_NULL;
+
+				// get string for the new code from dictionary
+				strlen = lzw_get_str(ctx, nc, buff, sizeof(buff));
+				// remember the first sybmol of this string
+				c = buff[sizeof(buff) - strlen];
+				// write the string into the output stream
+				//fwrite(buff+(sizeof(buff) - strlen), strlen, 1, fout);
+				lzw_writebuf(fout, buff+(sizeof(buff) - strlen), strlen);
+
+				if (ctx->max == (DICT_SIZE-1))
+					goto start;
 			}
 			else {
 				fprintf(stderr, "ERROR: wrong code %d, input %d\n", nc, isize);
-				break;
-			}
-		}
-
-		// get string for the new code from dictionary
-		strlen = lzw_get_str(ctx, nc, buff, sizeof(buff));
-		// remember the first sybmol of this string
-		c = buff[sizeof(buff) - strlen];
-		// write the string into the output stream
-		fwrite(buff+(sizeof(buff) - strlen), strlen, 1, fout);
-
-		if (code != NODE_NULL)
-		{
-			// add <prev code str>+<first str symbol> to the dictionary
-			if (lzw_add_str(ctx, code, c) == NODE_NULL) {
-				fprintf(stderr, "ERROR: dictionary is full, input %d\n", isize);
 				break;
 			}
 		}
