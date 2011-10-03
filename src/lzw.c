@@ -28,6 +28,8 @@ bitbuffer_t;
 typedef struct _node
 {
 	code_t	prev;	// prefix code
+	code_t	first;	// firts child code
+	code_t	next;	// next child code
 	char	ch;		// last symbol
 }
 node_t;
@@ -174,17 +176,14 @@ void lzw_init(lzw_t *ctx, void *stream)
 	for (i = 0; i < 256; i++)
 	{
 		ctx->dict[i].prev = NODE_NULL;
+		ctx->dict[i].first = NODE_NULL;
+		ctx->dict[i].next = NODE_NULL;
 		ctx->dict[i].ch = i;
 	}
 
 	ctx->max = i-1;
 	ctx->codesize = 8;
 	ctx->stream = stream;
-}
-
-static code_t lzw_hash(code_t code, unsigned char c)
-{
-	return (code << 8) | c;
 }
 
 /******************************************************************************
@@ -201,9 +200,9 @@ static code_t lzw_hash(code_t code, unsigned char c)
 ******************************************************************************/
 static code_t lzw_find_str(lzw_t *ctx, code_t code, char c)
 {
-	code_t nc; 
+	code_t nc;
 
-	for (nc = code + 1; nc <= ctx->max; nc++)
+	for (nc = ctx->dict[code].first; nc != NODE_NULL; nc = ctx->dict[nc].next)
 	{
 		if (code == ctx->dict[nc].prev && c == ctx->dict[nc].ch)
 			return nc;
@@ -262,6 +261,9 @@ static code_t lzw_add_str(lzw_t *ctx, code_t code, char c)
 		return NODE_NULL;
 	
 	ctx->dict[ctx->max].prev = code;
+	ctx->dict[ctx->max].first = NODE_NULL;
+	ctx->dict[ctx->max].next = ctx->dict[code].first;
+	ctx->dict[code].first = ctx->max;
 	ctx->dict[ctx->max].ch = c;
 
 	return ctx->max;
@@ -323,12 +325,19 @@ static code_t lzw_read(lzw_t *ctx)
 ******************************************************************************/
 int lzw_encode(lzw_t *ctx, FILE *fin, FILE *fout)
 {
-	code_t   code = NODE_NULL;
+	code_t   code;
 	unsigned isize = 0;
 	unsigned strlen = 0;
 	int      c;
 
 	lzw_init(ctx, fout);
+
+	if ((c = fgetc(fin)) == EOF)
+		return -1;
+
+	code = c;
+	isize++;
+	strlen++;
 
 	while ((c = fgetc(fin)) != EOF)
 	{
@@ -426,9 +435,9 @@ int lzw_decode(lzw_t *ctx, FILE *fin, FILE *fout)
 
 		// get string for the new code from dictionary
 		strlen = lzw_get_str(ctx, nc, buff, sizeof(buff));
-		// remember first sybmol in the added string
+		// remember the first sybmol of this string
 		c = buff[sizeof(buff) - strlen];
-		// write string into the output stream
+		// write the string into the output stream
 		fwrite(buff+(sizeof(buff) - strlen), strlen, 1, fout);
 
 		if (code != NODE_NULL)
