@@ -13,7 +13,7 @@
 #include <memory.h>
 
 #define DICT_SIZE	(1 << 20)
-#define NODE_NULL	(-1)
+#define NODE_NULL	(DICT_SIZE-1)
 
 typedef unsigned int code_t;
 
@@ -34,10 +34,19 @@ typedef struct _node
 }
 node_t;
 
+// LZW node, represents a string
+typedef struct _node_dec
+{
+	code_t	prev;	// prefix code
+	char	ch;		// last symbol
+}
+node_dec_t;
+
 // LZW context
 typedef struct _lzw
 {
 	node_t        dict[DICT_SIZE];	// code dictionary
+	unsigned      code;				// current code
 	unsigned      max;				// maximal code
 	unsigned      codesize;			// number of bits in code
 	bitbuffer_t   bb;				// bit-buffer struct
@@ -47,6 +56,18 @@ typedef struct _lzw
 	unsigned char buff[256];		// stream buffer, adjust its size if you need
 }
 lzw_t;
+
+typedef struct _lzw_dec
+{
+	node_dec_t    dict[DICT_SIZE];	// code dictionary
+	unsigned char buff[DICT_SIZE];	// output buffer
+	unsigned      code;				// current code
+	unsigned      max;				// maximal code
+	unsigned      codesize;			// number of bits in code
+	bitbuffer_t   bb;				// bit-buffer struct
+	void          *stream;			// pointer to the stream object
+}
+lzw_dec_t;
 
 // Application defined stream callbacks
 void lzw_writebuf(void *stream, unsigned char *buf, unsigned size);
@@ -176,18 +197,23 @@ void lzw_init(lzw_t *ctx, void *stream)
 	
 	for (i = 0; i < 256; i++)
 	{
-		ctx->dict[i].prev = NODE_NULL;
+		ctx->dict[i].prev  = NODE_NULL;
 		ctx->dict[i].first = NODE_NULL;
-		ctx->dict[i].next = NODE_NULL;
+		ctx->dict[i].next  = NODE_NULL;
 		ctx->dict[i].ch = i;
 	}
 
+	ctx->dict[NODE_NULL].prev  = NODE_NULL;
+	ctx->dict[NODE_NULL].first = NODE_NULL;
+	ctx->dict[NODE_NULL].next  = NODE_NULL;
+
+	ctx->code = NODE_NULL;
 	ctx->max = i-1;
 	ctx->codesize = 8;
 	ctx->stream = stream;
 }
 
-void lzw_reset(lzw_t *ctx)
+static void lzw_reset(lzw_t *ctx)
 {
 	unsigned i;
 
@@ -199,6 +225,7 @@ void lzw_reset(lzw_t *ctx)
 	ctx->max = i-1;
 	ctx->codesize = 8;
 }
+
 
 /******************************************************************************
 **  lzw_find_str
@@ -269,11 +296,11 @@ static unsigned lzw_get_str(lzw_t *ctx, code_t code, unsigned char buff[], unsig
 ******************************************************************************/
 static code_t lzw_add_str(lzw_t *ctx, code_t code, char c)
 {
-	ctx->max++;
-
-	if (ctx->max >= DICT_SIZE)
+	if (ctx->max == NODE_NULL || code == NODE_NULL)
 		return NODE_NULL;
 	
+	ctx->max++;
+
 	ctx->dict[ctx->max].prev = code;
 	ctx->dict[ctx->max].first = NODE_NULL;
 	ctx->dict[ctx->max].next = ctx->dict[code].first;
@@ -325,6 +352,47 @@ static code_t lzw_read(lzw_t *ctx)
 	return lzw_readbits(ctx, ctx->codesize);
 }
 
+int lzw_encode_buf(lzw_t *ctx, unsigned char buf[], unsigned size)
+{
+	unsigned i;
+
+	if (!size) return 0;
+
+	for (i = 0; i < size; i++)
+	{
+		unsigned char c = buf[i];
+		code_t        nc = lzw_find_str(ctx, ctx->code, c);
+
+		if (nc == NODE_NULL)
+		{
+			// the string was not found - write <prefix>
+			lzw_write(ctx, ctx->code);
+
+			// add <prefix>+<current symbol> to the dictionary
+			if (lzw_add_str(ctx, ctx->code, c) == NODE_NULL)
+			{
+				lzw_reset(ctx);
+			}
+
+			ctx->code = c;
+		}
+		else
+		{
+			ctx->code = nc;
+		}
+	}
+
+	return 1;
+}
+
+static void lzw_encode_end(lzw_t *ctx)
+{
+	// write last code
+	lzw_write(ctx, ctx->code);
+	lzw_flushbits(ctx);
+	lzw_writebuf(ctx->stream, ctx->buff, ctx->lzwn);
+}
+
 /******************************************************************************
 **  lzw_encode
 **  --------------------------------------------------------------------------
@@ -339,52 +407,17 @@ static code_t lzw_read(lzw_t *ctx)
 ******************************************************************************/
 int lzw_encode(lzw_t *ctx, FILE *fin, FILE *fout)
 {
-	code_t   code;
-	unsigned isize = 0;
-	unsigned strlen = 0;
-	int      c;
+	unsigned      len;
+	unsigned char buf[256];
 
 	lzw_init(ctx, fout);
 
-	if ((c = fgetc(fin)) == EOF)
-		return -1;
-
-	code = c;
-	isize++;
-	strlen++;
-
-	while ((c = fgetc(fin)) != EOF)
+	while (len = lzw_readbuf(fin, buf, sizeof(buf)))
 	{
-		code_t nc = lzw_find_str(ctx, code, c);
-
-		isize++;
-
-		if (nc == NODE_NULL)
-		{
-			// the string was not found - write <prefix>
-			lzw_write(ctx, code);
-
-			// add <prefix>+<current symbol> to the dictionary
-			if (lzw_add_str(ctx, code, c) == NODE_NULL)
-			{
-				fprintf(stderr, "dictionary is full, input %d\n", isize);
-				lzw_reset(ctx);
-			}
-
-			code = c;
-			strlen = 1;
-		}
-		else
-		{
-			code = nc;
-			strlen++;
-		}
+		lzw_encode_buf(ctx, buf, len);
 	}
 
-	// write last code
-	lzw_write(ctx, code);
-	lzw_flushbits(ctx);
-	lzw_writebuf(ctx->stream, ctx->buff, ctx->lzwn);
+	lzw_encode_end(ctx);
 
 	return 0;
 }
@@ -416,7 +449,7 @@ start:
 
 	c = code = lzw_readbits(ctx, ctx->codesize++);
 	// write symbol into the output stream
-	fwrite(&c, 1, 1, fout);
+	lzw_writebuf(fout, &c, 1);
 
 	for(;;)
 	{
