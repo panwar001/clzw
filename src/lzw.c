@@ -4,18 +4,18 @@
 **  
 **  Compresses data using LZW algorithm.
 **  
-**  Parameters: input byte stream.
+**  Author: V.Antonenko
 **
-**  Return: A lot of files, each file is a H.264 NAL unit.
+**
 ******************************************************************************/
 #include <stdlib.h>
 #include <stdio.h>
 #include <memory.h>
 
-#define DICT_SIZE	(1 << (sizeof(code_t)*8))
-#define NODE_NULL	(DICT_SIZE-1)
+#define DICT_SIZE	(1 << 20)
+#define NODE_NULL	(-1)
 
-typedef unsigned short code_t;
+typedef unsigned int code_t;
 
 typedef struct _bitbuffer
 {
@@ -182,10 +182,15 @@ void lzw_init(lzw_t *ctx, void *stream)
 	ctx->stream = stream;
 }
 
+static code_t lzw_hash(code_t code, unsigned char c)
+{
+	return (code << 8) | c;
+}
+
 /******************************************************************************
 **  lzw_find_str
 **  --------------------------------------------------------------------------
-**  Searches a string in LZW dictionaly.
+**  Searches a string in LZW dictionaly. It is used only in encoder.
 **  
 **  Arguments:
 **      ctx  - LZW context;
@@ -365,6 +370,8 @@ int lzw_encode(lzw_t *ctx, FILE *fin, FILE *fout)
 	return 0;
 }
 
+unsigned char buff[DICT_SIZE];
+
 /******************************************************************************
 **  lzw_decode
 **  --------------------------------------------------------------------------
@@ -382,7 +389,6 @@ int lzw_decode(lzw_t *ctx, FILE *fin, FILE *fout)
 	unsigned      isize = 0;
 	code_t        code;
 	unsigned char c;
-	unsigned char buff[DICT_SIZE];
 
 	lzw_init(ctx, fin);
 
