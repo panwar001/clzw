@@ -2,7 +2,7 @@
 <VisualStudioProject
 	ProjectType="Visual C++"
 	Version="9.00"
-	Name="lzw"
+	Name="lzw-enc"
 	ProjectGUID="{F23B27EE-FE46-4CAD-84BD-CAF1D2F06290}"
 	RootNamespace="lzw"
 	Keyword="Win32Proj"
@@ -170,7 +170,15 @@
 	</References>
 	<Files>
 		<File
-			RelativePath=".\lzw.c"
+			RelativePath=".\encoder.c"
+			>
+		</File>
+		<File
+			RelativePath=".\lzw-enc.c"
+			>
+		</File>
+		<File
+			RelativePath=".\lzw.h"
 			>
 		</File>
 	</Files>
