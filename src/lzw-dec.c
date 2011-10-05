@@ -165,10 +165,6 @@ static int lzw_dec_addstr(lzw_dec_t *ctx, int code, char c)
 	if (ctx->max == NODE_NULL)
 		return NODE_NULL;
 	
-	// increase the code size (number of bits) if needed
-	if (ctx->max+1 == (1 << ctx->codesize))
-		ctx->codesize++;
-
 	if (code == NODE_NULL)
 		return c;
 		
@@ -245,6 +241,10 @@ int lzw_decode_buf(lzw_dec_t *ctx, unsigned char buf[], unsigned size)
 				break;
 			}
 
+			// increase the code size (number of bits) if needed
+			if (ctx->max+1 == (1 << ctx->codesize))
+				ctx->codesize++;
+
 			if (ctx->max == (DICT_SIZE-1))
 				lzw_dec_reset(ctx);
 		}
@@ -261,6 +261,10 @@ int lzw_decode_buf(lzw_dec_t *ctx, unsigned char buf[], unsigned size)
 
 				// output string for the new code from dictionary
 				ctx->c = lzw_dec_writestr(ctx, nc);
+
+				// increase the code size (number of bits) if needed
+				if (nc+1 == (1 << ctx->codesize))
+					ctx->codesize++;
 
 				if (ctx->max == (DICT_SIZE-1))
 					lzw_dec_reset(ctx);
