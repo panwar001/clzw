@@ -199,8 +199,8 @@ int lzw_decode(lzw_dec_t *ctx, char buf[], unsigned size)
 	if (!size) return 0;
 
 	ctx->inbuff = buf;
-	ctx->lzwn = 0;
-	ctx->lzwm = size;
+	ctx->lzwn   = 0;
+	ctx->lzwm   = size;
 
 	for (;;)
 	{
@@ -215,9 +215,10 @@ int lzw_decode(lzw_dec_t *ctx, char buf[], unsigned size)
 		// check the input stream for EOF
 		if (ncode < 0)
 		{
+#if DEBUG
 			if (ctx->lzwn != ctx->lzwm)
 				return LZW_ERR_INPUT_BUF;
-
+#endif
 			break;
 		}
 		else if (ncode <= ctx->max)
@@ -228,42 +229,30 @@ int lzw_decode(lzw_dec_t *ctx, char buf[], unsigned size)
 			// add <prev code str>+<first str symbol> to the dictionary
 			if (lzw_dec_addstr(ctx, ctx->code, ctx->c) == CODE_NULL)
 				return LZW_ERR_DICT_IS_FULL;
-
-			ctx->code = ncode;
-
-			// increase the code size (number of bits) if needed
-			if (ctx->max+1 == (1 << ctx->codesize))
-				ctx->codesize++;
-
-			// check dictionary overflow
-			if (ctx->max+1 == DICT_SIZE)
-				lzw_dec_reset(ctx);
 		}
 		else // unknown code
 		{
 			// try to guess the code
-			if (ncode-1 == ctx->max)
-			{
-				// create code: <nc> = <code> + <c>
-				if (lzw_dec_addstr(ctx, ctx->code, ctx->c) == CODE_NULL)
-					return LZW_ERR_DICT_IS_FULL;
-
-				// output string for the new code from dictionary
-				ctx->c = lzw_dec_writestr(ctx, ncode);
-
-				ctx->code = ncode;
-
-				// increase the code size (number of bits) if needed
-				if (ncode+1 == (1 << ctx->codesize))
-					ctx->codesize++;
-
-				// check dictionary overflow
-				if (ctx->max == (DICT_SIZE-1))
-					lzw_dec_reset(ctx);
-			}
-			else
+			if (ncode != ctx->max+1)
 				return LZW_ERR_WRONG_CODE;
+
+			// create code: <nc> = <code> + <c>
+			if (lzw_dec_addstr(ctx, ctx->code, ctx->c) == CODE_NULL)
+				return LZW_ERR_DICT_IS_FULL;
+
+			// output string for the new code from dictionary
+			ctx->c = lzw_dec_writestr(ctx, ncode);
 		}
+
+		ctx->code = ncode;
+
+		// increase the code size (number of bits) if needed
+		if (ctx->max+1 == (1 << ctx->codesize))
+			ctx->codesize++;
+
+		// check dictionary overflow
+		if (ctx->max+1 == DICT_SIZE)
+			lzw_dec_reset(ctx);
 	}
 
 	return ctx->lzwn;
