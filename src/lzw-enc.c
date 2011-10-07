@@ -46,25 +46,6 @@ static void lzw_enc_writebits(lzw_enc_t *ctx, unsigned bits, unsigned nbits)
 }
 
 /******************************************************************************
-**  lzw_enc_flushbits
-**  --------------------------------------------------------------------------
-**  Flush bits into bit-buffer.
-**  If there is not an integer number of bytes in bit-buffer - add zero bits
-**  and write these bytes.
-**  
-**  Arguments:
-**      ctx     - pointer to LZW context;
-**
-**  Return: -
-******************************************************************************/
-static void lzw_enc_flushbits(lzw_enc_t *ctx)
-{
-	if (ctx->bb.n & 3)
-		lzw_enc_writebits(ctx, 0, 8-(ctx->bb.n & 3));
-}
-
-
-/******************************************************************************
 **  lzw_enc_init
 **  --------------------------------------------------------------------------
 **  Initializes LZW encoder context.
@@ -73,7 +54,7 @@ static void lzw_enc_flushbits(lzw_enc_t *ctx)
 **      ctx     - LZW context;
 **      stream  - Pointer to Input/Output stream object;
 **
-**  RETURN: -
+**  Return: -
 ******************************************************************************/
 void lzw_enc_init(lzw_enc_t *ctx, void *stream)
 {
@@ -81,17 +62,18 @@ void lzw_enc_init(lzw_enc_t *ctx, void *stream)
 
 	for (i = 0; i < 256; i++)
 	{
-		ctx->dict[i].prev  = NODE_NULL;
+		ctx->dict[i].prev  = NODE_NULL-1;
 		ctx->dict[i].first = NODE_NULL;
-		ctx->dict[i].next  = NODE_NULL;
+		ctx->dict[i].next  = i+1;
 		ctx->dict[i].ch = i;
 	}
+	ctx->dict[i-1].next = NODE_NULL;
 
-	ctx->dict[NODE_NULL].prev  = NODE_NULL;
-	ctx->dict[NODE_NULL].first = NODE_NULL;
-	ctx->dict[NODE_NULL].next  = NODE_NULL;
+	ctx->dict[NODE_NULL-1].prev  = NODE_NULL;
+	ctx->dict[NODE_NULL-1].first = 0;
+	ctx->dict[NODE_NULL-1].next  = NODE_NULL;
 
-	ctx->code = NODE_NULL;
+	ctx->code = NODE_NULL-1;
 	ctx->max = i-1;
 	ctx->codesize = 8;
 	ctx->stream = stream;
@@ -106,11 +88,15 @@ void lzw_enc_init(lzw_enc_t *ctx, void *stream)
 **  Arguments:
 **      ctx     - LZW encoder context;
 **
-**  RETURN: -
+**  Return: -
 ******************************************************************************/
 static void lzw_enc_reset(lzw_enc_t *ctx)
 {
 	unsigned i;
+
+#if DEBUG
+	printf("reset\n");
+#endif
 
 	for (i = 0; i < 256; i++)
 	{
@@ -125,13 +111,14 @@ static void lzw_enc_reset(lzw_enc_t *ctx)
 **  lzw_enc_findstr
 **  --------------------------------------------------------------------------
 **  Searches a string in LZW dictionaly. It is used only in encoder.
+**  Fast search is performed using embedded linked lists.
 **  
 **  Arguments:
 **      ctx  - LZW context;
 **      code - code for the string beginning (already in dictionary);
 **      c    - last symbol;
 **
-**  RETURN: code representing the string or NODE_NULL.
+**  Return: code representing the string or NODE_NULL.
 ******************************************************************************/
 static code_t lzw_enc_findstr(lzw_enc_t *ctx, code_t code, char c)
 {
@@ -156,7 +143,7 @@ static code_t lzw_enc_findstr(lzw_enc_t *ctx, code_t code, char c)
 **      code - code for the string beginning (already in dictionary);
 **      c    - last symbol;
 **
-**  RETURN: code representing the string or NODE_NULL if dictionary is full.
+**  Return: code representing the string or NODE_NULL if dictionary is full.
 ******************************************************************************/
 static code_t lzw_enc_addstr(lzw_enc_t *ctx, code_t code, char c)
 {
@@ -170,30 +157,11 @@ static code_t lzw_enc_addstr(lzw_enc_t *ctx, code_t code, char c)
 	ctx->dict[ctx->max].next = ctx->dict[code].first;
 	ctx->dict[code].first = ctx->max;
 	ctx->dict[ctx->max].ch = c;
+#if DEBUG
+	printf("add code %x = %x + %c\n", ctx->max, code, c);
+#endif
 
 	return ctx->max;
-}
-
-/******************************************************************************
-**  lzw_enc_write
-**  --------------------------------------------------------------------------
-**  Writes an output code into the stream.
-**  It is important that codesize is increased before the code is sent into
-**  the output stream. This function is used only in encoder.
-**  
-**  Arguments:
-**      ctx  - LZW context;
-**      code - code for the string;
-**
-**  RETURN: -
-******************************************************************************/
-static void lzw_enc_write(lzw_enc_t *ctx, code_t code)
-{
-	// increase the code size (number of bits) if needed
-	if (ctx->max == (1 << ctx->codesize))
-		ctx->codesize++;
-
-	lzw_enc_writebits(ctx, code, ctx->codesize);
 }
 
 /******************************************************************************
@@ -207,7 +175,7 @@ static void lzw_enc_write(lzw_enc_t *ctx, code_t code)
 **      buf  - input byte buffer;
 **      size - size of the buffer;
 **
-**  RETURN: Number of processed bytes.
+**  Return: Number of processed bytes.
 ******************************************************************************/
 int lzw_encode_buf(lzw_enc_t *ctx, unsigned char buf[], unsigned size)
 {
@@ -223,7 +191,13 @@ int lzw_encode_buf(lzw_enc_t *ctx, unsigned char buf[], unsigned size)
 		if (nc == NODE_NULL)
 		{
 			// the string was not found - write <prefix>
-			lzw_enc_write(ctx, ctx->code);
+			lzw_enc_writebits(ctx, ctx->code, ctx->codesize);
+#if DEBUG
+			printf("code %x (%d)\n", ctx->code, ctx->codesize);
+#endif
+			// increase the code size (number of bits) if needed
+			if (ctx->max+1 == (1 << ctx->codesize))
+				ctx->codesize++;
 
 			// add <prefix>+<current symbol> to the dictionary
 			if (lzw_enc_addstr(ctx, ctx->code, c) == NODE_NULL)
@@ -253,12 +227,16 @@ int lzw_encode_buf(lzw_enc_t *ctx, unsigned char buf[], unsigned size)
 **  Arguments:
 **      ctx  - LZW encoder context;
 **
-**  RETURN: -
+**  Return: -
 ******************************************************************************/
 void lzw_encode_end(lzw_enc_t *ctx)
 {
+#if DEBUG
+	printf("code %x (%d)\n", ctx->code, ctx->codesize);
+#endif
 	// write last code
-	lzw_enc_write(ctx, ctx->code);
-	lzw_enc_flushbits(ctx);
+	lzw_enc_writebits(ctx, ctx->code, ctx->codesize);
+	// flush bits in the bit-buffer
+	lzw_enc_writebits(ctx, 0, 8 - ctx->bb.n);
 	lzw_writebuf(ctx->stream, ctx->buff, ctx->lzwn);
 }

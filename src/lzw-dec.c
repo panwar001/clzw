@@ -2,7 +2,7 @@
 **  LZW decoder
 **  --------------------------------------------------------------------------
 **  
-**  Compresses data using LZW algorithm.
+**  Decompresses data using LZW algorithm.
 **  
 **  Author: V.Antonenko
 **
@@ -52,7 +52,7 @@ static int lzw_dec_readbits(lzw_dec_t *ctx, unsigned nbits)
 **      ctx     - LZW decoder context;
 **      stream  - Pointer to application defined Input/Output stream object;
 **
-**  RETURN: -
+**  Return: -
 ******************************************************************************/
 void lzw_dec_init(lzw_dec_t *ctx, void *stream)
 {
@@ -81,22 +81,18 @@ void lzw_dec_init(lzw_dec_t *ctx, void *stream)
 **  Arguments:
 **      ctx     - LZW decoder context;
 **
-**  RETURN: -
+**  Return: -
 ******************************************************************************/
 static void lzw_dec_reset(lzw_dec_t *ctx)
 {
 	int nc;
 
+	ctx->code = NODE_NULL;
 	ctx->max = 255;
 	ctx->codesize = 8;
-
-	if ((nc = lzw_dec_readbits(ctx, ctx->codesize)) < 0)
-		return;
-	
-	ctx->codesize++;
-	ctx->c = ctx->code = nc;
-	// write symbol into the output stream
-	lzw_writebuf(ctx->stream, &ctx->c, 1);
+#if DEBUG
+	printf("reset\n");
+#endif
 }
 
 
@@ -138,7 +134,7 @@ static unsigned lzw_dec_getstr(lzw_dec_t *ctx, int code)
 **      code - code for the string beginning (already in dictionary);
 **      c    - last symbol;
 **
-**  RETURN: code representing the string or NODE_NULL if dictionary is full.
+**  Return: code representing the string or NODE_NULL if dictionary is full.
 ******************************************************************************/
 static int lzw_dec_addstr(lzw_dec_t *ctx, int code, char c)
 {
@@ -152,25 +148,11 @@ static int lzw_dec_addstr(lzw_dec_t *ctx, int code, char c)
 
 	ctx->dict[ctx->max].prev = code;
 	ctx->dict[ctx->max].ch = c;
+#if DEBUG
+	printf("add code %x = %x + %c\n", ctx->max, code, c);
+#endif
 
 	return ctx->max;
-}
-
-/******************************************************************************
-**  lzw_dec_readcode
-**  --------------------------------------------------------------------------
-**  Reads a code from the input stream. Be careful about where you put its
-**  call because this function changes the codesize.
-**  This function is used only in decoder.
-**  
-**  Arguments:
-**      ctx  - LZW context;
-**
-**  RETURN: code
-******************************************************************************/
-static int lzw_dec_readcode(lzw_dec_t *ctx)
-{
-	return lzw_dec_readbits(ctx, ctx->codesize);
 }
 
 /******************************************************************************
@@ -185,7 +167,7 @@ static int lzw_dec_readcode(lzw_dec_t *ctx)
 **      ctx  - LZW context;
 **      code - LZW code;
 **
-**  RETURN: The first symbol of the output string.
+**  Return: The first symbol of the output string.
 ******************************************************************************/
 static unsigned char lzw_dec_writestr(lzw_dec_t *ctx, int code)
 {
@@ -226,49 +208,57 @@ int lzw_decode_buf(lzw_dec_t *ctx, unsigned char buf[], unsigned size)
 
 	for (;;)
 	{
-		int nc;
+		int ncode;
 
-		nc = lzw_dec_readcode(ctx);
+		// read a code from the input stream
+		ncode = lzw_dec_readbits(ctx, ctx->codesize);
+#if DEBUG
+		printf("code %x (%d)\n", ncode, ctx->codesize);
+#endif
 
 		// check the input stream for EOF
-		if (nc < 0)
+		if (ncode < 0)
 		{
 			if (ctx->lzwn != ctx->lzwm)
 				return LZW_ERR_INPUT_BUF;
 
 			break;
 		}
-		else if (nc <= ctx->max)
+		else if (ncode <= ctx->max)
 		{
 			// output string for the new code from dictionary
-			ctx->c = lzw_dec_writestr(ctx, nc);
+			ctx->c = lzw_dec_writestr(ctx, ncode);
 
 			// add <prev code str>+<first str symbol> to the dictionary
 			if (lzw_dec_addstr(ctx, ctx->code, ctx->c) == NODE_NULL)
 				return LZW_ERR_DICT_IS_FULL;
+
+			ctx->code = ncode;
 
 			// increase the code size (number of bits) if needed
 			if (ctx->max+1 == (1 << ctx->codesize))
 				ctx->codesize++;
 
 			// check dictionary overflow
-			if (ctx->max == (DICT_SIZE-1))
+			if (ctx->max+1 == DICT_SIZE)
 				lzw_dec_reset(ctx);
 		}
 		else // unknown code
 		{
 			// try to guess the code
-			if (nc-1 == ctx->max)
+			if (ncode-1 == ctx->max)
 			{
 				// create code: <nc> = <code> + <c>
 				if (lzw_dec_addstr(ctx, ctx->code, ctx->c) == NODE_NULL)
 					return LZW_ERR_DICT_IS_FULL;
 
 				// output string for the new code from dictionary
-				ctx->c = lzw_dec_writestr(ctx, nc);
+				ctx->c = lzw_dec_writestr(ctx, ncode);
+
+				ctx->code = ncode;
 
 				// increase the code size (number of bits) if needed
-				if (nc+1 == (1 << ctx->codesize))
+				if (ncode+1 == (1 << ctx->codesize))
 					ctx->codesize++;
 
 				// check dictionary overflow
@@ -278,8 +268,6 @@ int lzw_decode_buf(lzw_dec_t *ctx, unsigned char buf[], unsigned size)
 			else
 				return LZW_ERR_WRONG_CODE;
 		}
-
-		ctx->code = nc;
 	}
 
 	return ctx->lzwn;
