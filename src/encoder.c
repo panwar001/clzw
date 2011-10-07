@@ -3,12 +3,12 @@
 #include <memory.h>
 #include "lzw.h"
 
-void lzw_writebuf(void *stream, unsigned char *buf, unsigned size)
+void lzw_writebuf(void *stream, char *buf, unsigned size)
 {
 	fwrite(buf, size, 1, (FILE*)stream);
 }
 
-unsigned lzw_readbuf(void *stream, unsigned char *buf, unsigned size)
+unsigned lzw_readbuf(void *stream, char *buf, unsigned size)
 {
 	return fread(buf, 1, size, (FILE*)stream);
 }
@@ -30,11 +30,11 @@ lzw_enc_t lzw;
 ******************************************************************************/
 int main (int argc, char* argv[])
 {
-	FILE          *fin;
-	FILE          *fout;
-	lzw_enc_t     *ctx = &lzw;
-	unsigned      len;
-	unsigned char buf[256];
+	FILE       *fin;
+	FILE       *fout;
+	lzw_enc_t  *ctx = &lzw;
+	unsigned   len;
+	char       buf[256];
 
 	if (argc < 3) {
 		printf("Usage: lzw-enc <input file> <output file>\n");
@@ -55,10 +55,10 @@ int main (int argc, char* argv[])
 
 	while (len = lzw_readbuf(fin, buf, sizeof(buf)))
 	{
-		lzw_encode_buf(ctx, buf, len);
+		lzw_encode(ctx, buf, len);
 	}
 
-	lzw_encode_end(ctx);
+	lzw_enc_end(ctx);
 
 	fclose(fin);
 	fclose(fout);

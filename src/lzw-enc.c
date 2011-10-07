@@ -121,7 +121,7 @@ static void lzw_enc_reset(lzw_enc_t *ctx)
 **
 **  Return: code representing the string or CODE_NULL.
 ******************************************************************************/
-static int lzw_enc_findstr(lzw_enc_t *ctx, int code, char c)
+static int lzw_enc_findstr(lzw_enc_t *ctx, int code, unsigned char c)
 {
 	int nc;
 
@@ -146,7 +146,7 @@ static int lzw_enc_findstr(lzw_enc_t *ctx, int code, char c)
 **
 **  Return: code representing the string or CODE_NULL if dictionary is full.
 ******************************************************************************/
-static int lzw_enc_addstr(lzw_enc_t *ctx, int code, char c)
+static int lzw_enc_addstr(lzw_enc_t *ctx, int code, unsigned char c)
 {
 	if (ctx->max == CODE_NULL || code == CODE_NULL)
 		return CODE_NULL;
@@ -166,7 +166,7 @@ static int lzw_enc_addstr(lzw_enc_t *ctx, int code, char c)
 }
 
 /******************************************************************************
-**  lzw_encode_buf
+**  lzw_encode
 **  --------------------------------------------------------------------------
 **  Encode buffer by LZW algorithm. The output data is written by application
 **  specific callback to the application defined stream inside this function.
@@ -178,7 +178,7 @@ static int lzw_enc_addstr(lzw_enc_t *ctx, int code, char c)
 **
 **  Return: Number of processed bytes.
 ******************************************************************************/
-int lzw_encode_buf(lzw_enc_t *ctx, unsigned char buf[], unsigned size)
+int lzw_encode(lzw_enc_t *ctx, char buf[], unsigned size)
 {
 	unsigned i;
 
@@ -187,7 +187,7 @@ int lzw_encode_buf(lzw_enc_t *ctx, unsigned char buf[], unsigned size)
 	for (i = 0; i < size; i++)
 	{
 		unsigned char c = buf[i];
-		int        nc = lzw_enc_findstr(ctx, ctx->code, c);
+		int           nc = lzw_enc_findstr(ctx, ctx->code, c);
 
 		if (nc == CODE_NULL)
 		{
@@ -219,7 +219,7 @@ int lzw_encode_buf(lzw_enc_t *ctx, unsigned char buf[], unsigned size)
 }
 
 /******************************************************************************
-**  lzw_encode_end
+**  lzw_enc_end
 **  --------------------------------------------------------------------------
 **  Finish LZW encoding process. As output data is written into output stream
 **  via bit-buffer it can contain unsaved data. This function flushes
@@ -230,7 +230,7 @@ int lzw_encode_buf(lzw_enc_t *ctx, unsigned char buf[], unsigned size)
 **
 **  Return: -
 ******************************************************************************/
-void lzw_encode_end(lzw_enc_t *ctx)
+void lzw_enc_end(lzw_enc_t *ctx)
 {
 #if DEBUG
 	printf("code %x (%d)\n", ctx->code, ctx->codesize);

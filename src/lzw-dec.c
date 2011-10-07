@@ -64,10 +64,10 @@ void lzw_dec_init(lzw_dec_t *ctx, void *stream)
 		ctx->dict[i].ch = i;
 	}
 
-	ctx->code = CODE_NULL;
-	ctx->max = i-1;
+	ctx->code     = CODE_NULL;
+	ctx->max      = 255;
 	ctx->codesize = 8;
-	ctx->stream = stream;
+	ctx->stream   = stream;
 }
 
 /******************************************************************************
@@ -83,8 +83,8 @@ void lzw_dec_init(lzw_dec_t *ctx, void *stream)
 ******************************************************************************/
 static void lzw_dec_reset(lzw_dec_t *ctx)
 {
-	ctx->code = CODE_NULL;
-	ctx->max = 255;
+	ctx->code     = CODE_NULL;
+	ctx->max      = 255;
 	ctx->codesize = 8;
 #if DEBUG
 	printf("reset\n");
@@ -132,7 +132,7 @@ static unsigned lzw_dec_getstr(lzw_dec_t *ctx, int code)
 **
 **  Return: code representing the string or CODE_NULL if dictionary is full.
 ******************************************************************************/
-static int lzw_dec_addstr(lzw_dec_t *ctx, int code, char c)
+static int lzw_dec_addstr(lzw_dec_t *ctx, int code, unsigned char c)
 {
 	if (ctx->max == CODE_NULL)
 		return CODE_NULL;
@@ -181,7 +181,7 @@ static unsigned char lzw_dec_writestr(lzw_dec_t *ctx, int code)
 }
 
 /******************************************************************************
-**  lzw_decode_buf
+**  lzw_decode
 **  --------------------------------------------------------------------------
 **  Decodes buffer of LZW codes and writes strings into output stream.
 **  The output data is written by application specific callback to
@@ -194,7 +194,7 @@ static unsigned char lzw_dec_writestr(lzw_dec_t *ctx, int code)
 **
 **  Return: Number of processed bytes or error code if the value is negative.
 ******************************************************************************/
-int lzw_decode_buf(lzw_dec_t *ctx, unsigned char buf[], unsigned size)
+int lzw_decode(lzw_dec_t *ctx, char buf[], unsigned size)
 {
 	if (!size) return 0;
 

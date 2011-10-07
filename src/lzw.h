@@ -17,18 +17,18 @@ bitbuffer_t;
 // LZW encoder node, represents a string
 typedef struct _node_enc
 {
-	int     prev;	// prefix code
-	int     first;	// firts child code
-	int     next;	// next child code
-	char	ch;		// last symbol
+	int           prev;		// prefix code
+	int           first;	// firts child code
+	int           next;		// next child code
+	unsigned char ch;		// last symbol
 }
 node_enc_t;
 
 // LZW decoder node, represents a string
 typedef struct _node_dec
 {
-	int	    prev;	// prefix code
-	char    ch;		// last symbol
+	int           prev;		// prefix code
+	unsigned char ch;		// last symbol
 }
 node_dec_t;
 
@@ -64,15 +64,15 @@ typedef struct _lzw_dec
 }
 lzw_dec_t;
 
-void lzw_enc_init  (lzw_enc_t *ctx, void *stream);
-int  lzw_encode_buf(lzw_enc_t *ctx, unsigned char buf[], unsigned size);
-void lzw_encode_end(lzw_enc_t *ctx);
+void lzw_enc_init(lzw_enc_t *ctx, void *stream);
+int  lzw_encode  (lzw_enc_t *ctx, char buf[], unsigned size);
+void lzw_enc_end (lzw_enc_t *ctx);
 
-void lzw_dec_init  (lzw_dec_t *ctx, void *stream);
-int  lzw_decode_buf(lzw_dec_t *ctx, unsigned char buf[], unsigned size);
+void lzw_dec_init(lzw_dec_t *ctx, void *stream);
+int  lzw_decode  (lzw_dec_t *ctx, char buf[], unsigned size);
 
 // Application defined stream callbacks
-void     lzw_writebuf(void *stream, unsigned char *buf, unsigned size);
-unsigned lzw_readbuf (void *stream, unsigned char *buf, unsigned size);
+void     lzw_writebuf(void *stream, char *buf, unsigned size);
+unsigned lzw_readbuf (void *stream, char *buf, unsigned size);
 
 #endif //__LZW_H__
