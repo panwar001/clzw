@@ -60,13 +60,11 @@ void lzw_dec_init(lzw_dec_t *ctx, void *stream)
 
 	for (i = 0; i < 256; i++)
 	{
-		ctx->dict[i].prev  = NODE_NULL;
+		ctx->dict[i].prev  = CODE_NULL;
 		ctx->dict[i].ch = i;
 	}
 
-	ctx->dict[NODE_NULL].prev  = NODE_NULL;
-
-	ctx->code = NODE_NULL;
+	ctx->code = CODE_NULL;
 	ctx->max = i-1;
 	ctx->codesize = 8;
 	ctx->stream = stream;
@@ -85,9 +83,7 @@ void lzw_dec_init(lzw_dec_t *ctx, void *stream)
 ******************************************************************************/
 static void lzw_dec_reset(lzw_dec_t *ctx)
 {
-	int nc;
-
-	ctx->code = NODE_NULL;
+	ctx->code = CODE_NULL;
 	ctx->max = 255;
 	ctx->codesize = 8;
 #if DEBUG
@@ -115,7 +111,7 @@ static unsigned lzw_dec_getstr(lzw_dec_t *ctx, int code)
 {
 	unsigned i = sizeof(ctx->buff);
 
-	while (code != NODE_NULL && i)
+	while (code != CODE_NULL && i)
 	{
 		ctx->buff[--i] = ctx->dict[code].ch;
 		code = ctx->dict[code].prev;
@@ -134,14 +130,14 @@ static unsigned lzw_dec_getstr(lzw_dec_t *ctx, int code)
 **      code - code for the string beginning (already in dictionary);
 **      c    - last symbol;
 **
-**  Return: code representing the string or NODE_NULL if dictionary is full.
+**  Return: code representing the string or CODE_NULL if dictionary is full.
 ******************************************************************************/
 static int lzw_dec_addstr(lzw_dec_t *ctx, int code, char c)
 {
-	if (ctx->max == NODE_NULL)
-		return NODE_NULL;
+	if (ctx->max == CODE_NULL)
+		return CODE_NULL;
 	
-	if (code == NODE_NULL)
+	if (code == CODE_NULL)
 		return c;
 		
 	ctx->max++;
@@ -173,7 +169,7 @@ static unsigned char lzw_dec_writestr(lzw_dec_t *ctx, int code)
 {
 	unsigned strlen;
 
-	if (code == NODE_NULL)
+	if (code == CODE_NULL)
 		return 0;
 
 	// get string for the new code from dictionary
@@ -230,7 +226,7 @@ int lzw_decode_buf(lzw_dec_t *ctx, unsigned char buf[], unsigned size)
 			ctx->c = lzw_dec_writestr(ctx, ncode);
 
 			// add <prev code str>+<first str symbol> to the dictionary
-			if (lzw_dec_addstr(ctx, ctx->code, ctx->c) == NODE_NULL)
+			if (lzw_dec_addstr(ctx, ctx->code, ctx->c) == CODE_NULL)
 				return LZW_ERR_DICT_IS_FULL;
 
 			ctx->code = ncode;
@@ -249,7 +245,7 @@ int lzw_decode_buf(lzw_dec_t *ctx, unsigned char buf[], unsigned size)
 			if (ncode-1 == ctx->max)
 			{
 				// create code: <nc> = <code> + <c>
-				if (lzw_dec_addstr(ctx, ctx->code, ctx->c) == NODE_NULL)
+				if (lzw_dec_addstr(ctx, ctx->code, ctx->c) == CODE_NULL)
 					return LZW_ERR_DICT_IS_FULL;
 
 				// output string for the new code from dictionary

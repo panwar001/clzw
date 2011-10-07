@@ -1,13 +1,11 @@
 #ifndef __LZW_H__
 
 #define DICT_SIZE	(1 << 20)
-#define NODE_NULL	(DICT_SIZE)
+#define CODE_NULL	(DICT_SIZE)
 
 #define LZW_ERR_DICT_IS_FULL	-1
 #define LZW_ERR_INPUT_BUF		-2
 #define LZW_ERR_WRONG_CODE		-3
-
-typedef unsigned int code_t;
 
 typedef struct _bitbuffer
 {
@@ -19,9 +17,9 @@ bitbuffer_t;
 // LZW encoder node, represents a string
 typedef struct _node_enc
 {
-	code_t	prev;	// prefix code
-	code_t	first;	// firts child code
-	code_t	next;	// next child code
+	int     prev;	// prefix code
+	int     first;	// firts child code
+	int     next;	// next child code
 	char	ch;		// last symbol
 }
 node_enc_t;
@@ -38,7 +36,7 @@ node_dec_t;
 typedef struct _lzw_enc
 {
 	node_enc_t    dict[DICT_SIZE];	// code dictionary
-	unsigned      code;				// current code
+	int           code;				// current code
 	unsigned      max;				// maximal code
 	unsigned      codesize;			// number of bits in code
 	bitbuffer_t   bb;				// bit-buffer struct

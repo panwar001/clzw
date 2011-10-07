@@ -62,21 +62,22 @@ void lzw_enc_init(lzw_enc_t *ctx, void *stream)
 
 	for (i = 0; i < 256; i++)
 	{
-		ctx->dict[i].prev  = NODE_NULL-1;
-		ctx->dict[i].first = NODE_NULL;
+		ctx->dict[i].prev  = 256;
+		ctx->dict[i].first = CODE_NULL;
 		ctx->dict[i].next  = i+1;
-		ctx->dict[i].ch = i;
+		ctx->dict[i].ch    = i;
 	}
-	ctx->dict[i-1].next = NODE_NULL;
+	ctx->dict[255].next = CODE_NULL;
 
-	ctx->dict[NODE_NULL-1].prev  = NODE_NULL;
-	ctx->dict[NODE_NULL-1].first = 0;
-	ctx->dict[NODE_NULL-1].next  = NODE_NULL;
+	// entry for the non-existent code
+	ctx->dict[256].prev  = CODE_NULL;
+	ctx->dict[256].first = 0;
+	ctx->dict[256].next  = CODE_NULL;
 
-	ctx->code = NODE_NULL-1;
-	ctx->max = i-1;
+	ctx->code     = 256; // non-existent code
+	ctx->max      = 255;
 	ctx->codesize = 8;
-	ctx->stream = stream;
+	ctx->stream   = stream;
 }
 
 /******************************************************************************
@@ -100,10 +101,10 @@ static void lzw_enc_reset(lzw_enc_t *ctx)
 
 	for (i = 0; i < 256; i++)
 	{
-		ctx->dict[i].first = NODE_NULL;
+		ctx->dict[i].first = CODE_NULL;
 	}
 
-	ctx->max = i-1;
+	ctx->max      = i-1;
 	ctx->codesize = 8;
 }
 
@@ -118,19 +119,19 @@ static void lzw_enc_reset(lzw_enc_t *ctx)
 **      code - code for the string beginning (already in dictionary);
 **      c    - last symbol;
 **
-**  Return: code representing the string or NODE_NULL.
+**  Return: code representing the string or CODE_NULL.
 ******************************************************************************/
-static code_t lzw_enc_findstr(lzw_enc_t *ctx, code_t code, char c)
+static int lzw_enc_findstr(lzw_enc_t *ctx, int code, char c)
 {
-	code_t nc;
+	int nc;
 
-	for (nc = ctx->dict[code].first; nc != NODE_NULL; nc = ctx->dict[nc].next)
+	for (nc = ctx->dict[code].first; nc != CODE_NULL; nc = ctx->dict[nc].next)
 	{
 		if (code == ctx->dict[nc].prev && c == ctx->dict[nc].ch)
 			return nc;
 	}
 
-	return NODE_NULL;
+	return CODE_NULL;
 }
 
 /******************************************************************************
@@ -143,17 +144,17 @@ static code_t lzw_enc_findstr(lzw_enc_t *ctx, code_t code, char c)
 **      code - code for the string beginning (already in dictionary);
 **      c    - last symbol;
 **
-**  Return: code representing the string or NODE_NULL if dictionary is full.
+**  Return: code representing the string or CODE_NULL if dictionary is full.
 ******************************************************************************/
-static code_t lzw_enc_addstr(lzw_enc_t *ctx, code_t code, char c)
+static int lzw_enc_addstr(lzw_enc_t *ctx, int code, char c)
 {
-	if (ctx->max == NODE_NULL || code == NODE_NULL)
-		return NODE_NULL;
+	if (ctx->max == CODE_NULL || code == CODE_NULL)
+		return CODE_NULL;
 	
 	ctx->max++;
 
 	ctx->dict[ctx->max].prev = code;
-	ctx->dict[ctx->max].first = NODE_NULL;
+	ctx->dict[ctx->max].first = CODE_NULL;
 	ctx->dict[ctx->max].next = ctx->dict[code].first;
 	ctx->dict[code].first = ctx->max;
 	ctx->dict[ctx->max].ch = c;
@@ -186,9 +187,9 @@ int lzw_encode_buf(lzw_enc_t *ctx, unsigned char buf[], unsigned size)
 	for (i = 0; i < size; i++)
 	{
 		unsigned char c = buf[i];
-		code_t        nc = lzw_enc_findstr(ctx, ctx->code, c);
+		int        nc = lzw_enc_findstr(ctx, ctx->code, c);
 
-		if (nc == NODE_NULL)
+		if (nc == CODE_NULL)
 		{
 			// the string was not found - write <prefix>
 			lzw_enc_writebits(ctx, ctx->code, ctx->codesize);
@@ -200,7 +201,7 @@ int lzw_encode_buf(lzw_enc_t *ctx, unsigned char buf[], unsigned size)
 				ctx->codesize++;
 
 			// add <prefix>+<current symbol> to the dictionary
-			if (lzw_enc_addstr(ctx, ctx->code, c) == NODE_NULL)
+			if (lzw_enc_addstr(ctx, ctx->code, c) == CODE_NULL)
 			{
 				// dictionary is full - reset encoder
 				lzw_enc_reset(ctx);
@@ -237,6 +238,7 @@ void lzw_encode_end(lzw_enc_t *ctx)
 	// write last code
 	lzw_enc_writebits(ctx, ctx->code, ctx->codesize);
 	// flush bits in the bit-buffer
-	lzw_enc_writebits(ctx, 0, 8 - ctx->bb.n);
+	if (ctx->bb.n)
+		lzw_enc_writebits(ctx, 0, 8 - ctx->bb.n);
 	lzw_writebuf(ctx->stream, ctx->buff, ctx->lzwn);
 }
