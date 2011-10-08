@@ -91,7 +91,7 @@ void lzw_enc_init(lzw_enc_t *ctx, void *stream)
 **
 **  Return: -
 ******************************************************************************/
-static void lzw_enc_reset(lzw_enc_t *ctx)
+static void lzw_enc_reset(lzw_enc_t *const ctx)
 {
 	unsigned i;
 

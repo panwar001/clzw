@@ -20,12 +20,10 @@
 **      ctx     - pointer to LZW context;
 **      nbits   - number of bits to read, 0-24;
 **
-**  Return: bits
+**  Return: bits or -1 if there is no data
 ******************************************************************************/
-static int lzw_dec_readbits(lzw_dec_t *ctx, unsigned nbits)
+static int lzw_dec_readbits(lzw_dec_t *const ctx, unsigned nbits)
 {
-	unsigned bits;
-
 	// read bytes
 	while (ctx->bb.n < nbits)
 	{
@@ -38,9 +36,8 @@ static int lzw_dec_readbits(lzw_dec_t *ctx, unsigned nbits)
 	}
 
 	ctx->bb.n -= nbits;
-	bits = (ctx->bb.buf >> ctx->bb.n) & ((1 << nbits)-1);
 
-	return bits;
+	return (ctx->bb.buf >> ctx->bb.n) & ((1 << nbits)-1);
 }
 
 /******************************************************************************
@@ -60,8 +57,8 @@ void lzw_dec_init(lzw_dec_t *ctx, void *stream)
 
 	for (i = 0; i < 256; i++)
 	{
-		ctx->dict[i].prev  = CODE_NULL;
-		ctx->dict[i].ch = i;
+		ctx->dict[i].prev = CODE_NULL;
+		ctx->dict[i].ch   = i;
 	}
 
 	ctx->code     = CODE_NULL;
@@ -81,7 +78,7 @@ void lzw_dec_init(lzw_dec_t *ctx, void *stream)
 **
 **  Return: -
 ******************************************************************************/
-static void lzw_dec_reset(lzw_dec_t *ctx)
+static void lzw_dec_reset(lzw_dec_t *const ctx)
 {
 	ctx->code     = CODE_NULL;
 	ctx->max      = 255;
@@ -107,7 +104,7 @@ static void lzw_dec_reset(lzw_dec_t *ctx)
 **
 **  Return: the number of bytes in the string
 ******************************************************************************/
-static unsigned lzw_dec_getstr(lzw_dec_t *ctx, int code)
+static unsigned lzw_dec_getstr(lzw_dec_t *const ctx, int code)
 {
 	unsigned i = sizeof(ctx->buff);
 
@@ -132,18 +129,16 @@ static unsigned lzw_dec_getstr(lzw_dec_t *ctx, int code)
 **
 **  Return: code representing the string or CODE_NULL if dictionary is full.
 ******************************************************************************/
-static int lzw_dec_addstr(lzw_dec_t *ctx, int code, unsigned char c)
+static int lzw_dec_addstr(lzw_dec_t *const ctx, int code, unsigned char c)
 {
-	if (ctx->max == CODE_NULL)
-		return CODE_NULL;
-	
 	if (code == CODE_NULL)
 		return c;
 		
-	ctx->max++;
+	if (++ctx->max == CODE_NULL)
+		return CODE_NULL;
 
 	ctx->dict[ctx->max].prev = code;
-	ctx->dict[ctx->max].ch = c;
+	ctx->dict[ctx->max].ch   = c;
 #if DEBUG
 	printf("add code %x = %x + %c\n", ctx->max, code, c);
 #endif
@@ -165,18 +160,15 @@ static int lzw_dec_addstr(lzw_dec_t *ctx, int code, unsigned char c)
 **
 **  Return: The first symbol of the output string.
 ******************************************************************************/
-static unsigned char lzw_dec_writestr(lzw_dec_t *ctx, int code)
+static unsigned char lzw_dec_writestr(lzw_dec_t *const ctx, int code)
 {
-	unsigned strlen;
-
-	if (code == CODE_NULL)
-		return 0;
-
 	// get string for the new code from dictionary
-	strlen = lzw_dec_getstr(ctx, code);
+	unsigned strlen = lzw_dec_getstr(ctx, code);
+
 	// write the string into the output stream
 	lzw_writebuf(ctx->stream, ctx->buff+(sizeof(ctx->buff) - strlen), strlen);
-	// remember the first sybmol of this string
+
+	// to remember the first sybmol of this string
 	return ctx->buff[sizeof(ctx->buff) - strlen];
 }
 
@@ -206,13 +198,13 @@ int lzw_decode(lzw_dec_t *ctx, char buf[], unsigned size)
 	{
 		int ncode;
 
-		// read a code from the input stream
+		// read a code from the input buffer
 		ncode = lzw_dec_readbits(ctx, ctx->codesize);
 #if DEBUG
 		printf("code %x (%d)\n", ncode, ctx->codesize);
 #endif
 
-		// check the input stream for EOF
+		// check the input for EOF
 		if (ncode < 0)
 		{
 #if DEBUG
@@ -236,7 +228,7 @@ int lzw_decode(lzw_dec_t *ctx, char buf[], unsigned size)
 			if (ncode != ctx->max+1)
 				return LZW_ERR_WRONG_CODE;
 
-			// create code: <nc> = <code> + <c>
+			// create code: <nc> = <code> + <c> wich is equal to ncode
 			if (lzw_dec_addstr(ctx, ctx->code, ctx->c) == CODE_NULL)
 				return LZW_ERR_DICT_IS_FULL;
 
@@ -250,7 +242,7 @@ int lzw_decode(lzw_dec_t *ctx, char buf[], unsigned size)
 		if (ctx->max+1 == (1 << ctx->codesize))
 			ctx->codesize++;
 
-		// check dictionary overflow
+		// check the dictionary overflow
 		if (ctx->max+1 == DICT_SIZE)
 			lzw_dec_reset(ctx);
 	}
