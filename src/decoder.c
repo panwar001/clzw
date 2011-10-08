@@ -55,7 +55,13 @@ int main (int argc, char* argv[])
 
 	while (len = lzw_readbuf(fin, buf, sizeof(buf)))
 	{
-		lzw_decode(ctx, buf, len);
+		int ret = lzw_decode(ctx, buf, len);
+
+		if (ret != len)
+		{
+			fprintf(stderr, "Error %d\n", ret);
+			break;
+		}
 	}
 
 	fclose(fin);

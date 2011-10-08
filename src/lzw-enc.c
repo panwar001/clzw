@@ -23,7 +23,7 @@
 **
 **  Return: -
 ******************************************************************************/
-static void lzw_enc_writebits(lzw_enc_t *ctx, unsigned bits, unsigned nbits)
+static void lzw_enc_writebits(lzw_enc_t *const ctx, unsigned bits, unsigned nbits)
 {
 	// shift old bits to the left, add new to the right
 	ctx->bb.buf = (ctx->bb.buf << nbits) | (bits & ((1 << nbits)-1));
@@ -104,7 +104,7 @@ static void lzw_enc_reset(lzw_enc_t *ctx)
 		ctx->dict[i].first = CODE_NULL;
 	}
 
-	ctx->max      = i-1;
+	ctx->max      = 255;
 	ctx->codesize = 8;
 }
 
@@ -121,17 +121,17 @@ static void lzw_enc_reset(lzw_enc_t *ctx)
 **
 **  Return: code representing the string or CODE_NULL.
 ******************************************************************************/
-static int lzw_enc_findstr(lzw_enc_t *ctx, int code, unsigned char c)
+static int lzw_enc_findstr(lzw_enc_t *const ctx, int code, unsigned char c)
 {
 	int nc;
 
 	for (nc = ctx->dict[code].first; nc != CODE_NULL; nc = ctx->dict[nc].next)
 	{
-		if (code == ctx->dict[nc].prev && c == ctx->dict[nc].ch)
-			return nc;
+		if (c == ctx->dict[nc].ch)
+			break;
 	}
 
-	return CODE_NULL;
+	return nc;
 }
 
 /******************************************************************************
@@ -146,18 +146,17 @@ static int lzw_enc_findstr(lzw_enc_t *ctx, int code, unsigned char c)
 **
 **  Return: code representing the string or CODE_NULL if dictionary is full.
 ******************************************************************************/
-static int lzw_enc_addstr(lzw_enc_t *ctx, int code, unsigned char c)
+static int lzw_enc_addstr(lzw_enc_t *const ctx, int code, unsigned char c)
 {
-	if (ctx->max == CODE_NULL || code == CODE_NULL)
+	if (++ctx->max == CODE_NULL)
 		return CODE_NULL;
-	
-	ctx->max++;
 
-	ctx->dict[ctx->max].prev = code;
+	ctx->dict[ctx->max].prev  = code;
 	ctx->dict[ctx->max].first = CODE_NULL;
-	ctx->dict[ctx->max].next = ctx->dict[code].first;
+	ctx->dict[ctx->max].next  = ctx->dict[code].first;
+	ctx->dict[ctx->max].ch    = c;
+
 	ctx->dict[code].first = ctx->max;
-	ctx->dict[ctx->max].ch = c;
 #if DEBUG
 	printf("add code %x = %x + %c\n", ctx->max, code, c);
 #endif
