@@ -1,7 +1,8 @@
 #ifndef __LZW_H__
 
 #define DICT_SIZE	(1 << 20)
-#define CODE_NULL	(DICT_SIZE)
+#define CODE_NULL	DICT_SIZE
+#define HASH_SIZE	(DICT_SIZE/8)
 
 #define LZW_ERR_DICT_IS_FULL	-1
 #define LZW_ERR_INPUT_BUF		-2
@@ -36,6 +37,8 @@ node_dec_t;
 typedef struct _lzw_enc
 {
 	node_enc_t    dict[DICT_SIZE];	// code dictionary
+	int           hash[HASH_SIZE];
+	unsigned      hash_hit;
 	int           code;				// current code
 	unsigned      max;				// maximal code
 	unsigned      codesize;			// number of bits in code

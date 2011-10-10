@@ -60,6 +60,12 @@ void lzw_enc_init(lzw_enc_t *ctx, void *stream)
 {
 	unsigned i;
 
+	ctx->code     = 256; // non-existent code
+	ctx->max      = 255;
+	ctx->codesize = 8;
+	ctx->stream   = stream;
+	ctx->hash_hit = 0;
+
 	for (i = 0; i < 256; i++)
 	{
 		ctx->dict[i].prev  = 256;
@@ -74,10 +80,9 @@ void lzw_enc_init(lzw_enc_t *ctx, void *stream)
 	ctx->dict[256].first = 0;
 	ctx->dict[256].next  = CODE_NULL;
 
-	ctx->code     = 256; // non-existent code
-	ctx->max      = 255;
-	ctx->codesize = 8;
-	ctx->stream   = stream;
+	// clear hash table
+	for (i = 0; i < HASH_SIZE; i++)
+		ctx->hash[i] = 0;
 }
 
 /******************************************************************************
@@ -99,20 +104,41 @@ static void lzw_enc_reset(lzw_enc_t *const ctx)
 	printf("reset\n");
 #endif
 
+	ctx->max      = 255;
+	ctx->codesize = 8;
+
 	for (i = 0; i < 256; i++)
 	{
 		ctx->dict[i].first = CODE_NULL;
 	}
 
-	ctx->max      = 255;
-	ctx->codesize = 8;
+	for (i = 0; i < HASH_SIZE; i++)
+		ctx->hash[i] = 0;
+}
+
+/******************************************************************************
+**  lzw_hash
+**  --------------------------------------------------------------------------
+**  Hash function is used for searching of <prefix>+<symbol> combination
+**  in the hash table.
+**  
+**  Arguments:
+**      code - prefix code;
+**      c    - symbol;
+**
+**  Return: Hash code
+******************************************************************************/
+__inline static int lzw_hash(const int code, const unsigned char c)
+{
+	return ((code << 8) | c) & (HASH_SIZE-1);
 }
 
 /******************************************************************************
 **  lzw_enc_findstr
 **  --------------------------------------------------------------------------
 **  Searches a string in LZW dictionaly. It is used only in encoder.
-**  Fast search is performed using embedded linked lists.
+**  Fast search is performed by using hash table.
+**  Full search is performed by using embedded linked lists.
 **  
 **  Arguments:
 **      ctx  - LZW context;
@@ -125,6 +151,15 @@ static int lzw_enc_findstr(lzw_enc_t *const ctx, int code, unsigned char c)
 {
 	int nc;
 
+	// try hash search
+	nc = ctx->hash[lzw_hash(code, c)];
+
+	if (nc > 0 && ctx->dict[nc].prev == code && c == ctx->dict[nc].ch) {
+		ctx->hash_hit++;
+		return nc;
+	}
+
+	// full search
 	for (nc = ctx->dict[code].first; nc != CODE_NULL; nc = ctx->dict[nc].next)
 	{
 		if (c == ctx->dict[nc].ch)
@@ -148,8 +183,15 @@ static int lzw_enc_findstr(lzw_enc_t *const ctx, int code, unsigned char c)
 ******************************************************************************/
 static int lzw_enc_addstr(lzw_enc_t *const ctx, int code, unsigned char c)
 {
+	int hash;
+
 	if (++ctx->max == CODE_NULL)
 		return CODE_NULL;
+
+	// add the new code into hash table
+	hash = lzw_hash(code, c);
+	if (ctx->hash[hash] == 0)
+		ctx->hash[hash] = ctx->max;
 
 	ctx->dict[ctx->max].prev  = code;
 	ctx->dict[ctx->max].first = CODE_NULL;
