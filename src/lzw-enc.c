@@ -46,6 +46,23 @@ static void lzw_enc_writebits(lzw_enc_t *const ctx, unsigned bits, unsigned nbit
 }
 
 /******************************************************************************
+**  lzw_hash
+**  --------------------------------------------------------------------------
+**  Hash function is used for searching of <prefix>+<symbol> combination
+**  in the hash table.
+**  
+**  Arguments:
+**      code - prefix code;
+**      c    - symbol;
+**
+**  Return: Hash code
+******************************************************************************/
+__inline static int lzw_hash(const int code, const unsigned char c)
+{
+	return (code ^ ((int)c << 6)) & (HASH_SIZE-1);
+}
+
+/******************************************************************************
 **  lzw_enc_init
 **  --------------------------------------------------------------------------
 **  Initializes LZW encoder context.
@@ -60,29 +77,24 @@ void lzw_enc_init(lzw_enc_t *ctx, void *stream)
 {
 	unsigned i;
 
-	ctx->code     = 256; // non-existent code
+	ctx->code     = CODE_NULL; // non-existent code
 	ctx->max      = 255;
 	ctx->codesize = 8;
 	ctx->stream   = stream;
-	ctx->hash_hit = 0;
-
-	for (i = 0; i < 256; i++)
-	{
-		ctx->dict[i].prev  = 256;
-		ctx->dict[i].first = CODE_NULL;
-		ctx->dict[i].next  = i+1;
-		ctx->dict[i].ch    = i;
-	}
-	ctx->dict[255].next = CODE_NULL;
-
-	// entry for the non-existent code
-	ctx->dict[256].prev  = CODE_NULL;
-	ctx->dict[256].first = 0;
-	ctx->dict[256].next  = CODE_NULL;
 
 	// clear hash table
 	for (i = 0; i < HASH_SIZE; i++)
-		ctx->hash[i] = 0;
+		ctx->hash[i] = CODE_NULL;
+
+	for (i = 0; i < 256; i++)
+	{
+		int hash = lzw_hash(CODE_NULL, i);
+
+		ctx->dict[i].prev  = CODE_NULL;
+		ctx->dict[i].next  = ctx->hash[hash];
+		ctx->dict[i].ch    = i;
+		ctx->hash[hash]    = i;
+	}
 }
 
 /******************************************************************************
@@ -107,30 +119,16 @@ static void lzw_enc_reset(lzw_enc_t *const ctx)
 	ctx->max      = 255;
 	ctx->codesize = 8;
 
+	for (i = 0; i < HASH_SIZE; i++)
+		ctx->hash[i] = CODE_NULL;
+
 	for (i = 0; i < 256; i++)
 	{
-		ctx->dict[i].first = CODE_NULL;
+		int hash = lzw_hash(CODE_NULL, i);
+
+		ctx->dict[i].next  = ctx->hash[hash];
+		ctx->hash[hash]    = i;
 	}
-
-	for (i = 0; i < HASH_SIZE; i++)
-		ctx->hash[i] = 0;
-}
-
-/******************************************************************************
-**  lzw_hash
-**  --------------------------------------------------------------------------
-**  Hash function is used for searching of <prefix>+<symbol> combination
-**  in the hash table.
-**  
-**  Arguments:
-**      code - prefix code;
-**      c    - symbol;
-**
-**  Return: Hash code
-******************************************************************************/
-__inline static int lzw_hash(const int code, const unsigned char c)
-{
-	return ((code << 8) | c) & (HASH_SIZE-1);
 }
 
 /******************************************************************************
@@ -151,19 +149,12 @@ static int lzw_enc_findstr(lzw_enc_t *const ctx, int code, unsigned char c)
 {
 	int nc;
 
-	// try hash search
-	nc = ctx->hash[lzw_hash(code, c)];
-
-	if (nc > 0 && ctx->dict[nc].prev == code && c == ctx->dict[nc].ch) {
-		ctx->hash_hit++;
-		return nc;
-	}
-
-	// full search
-	for (nc = ctx->dict[code].first; nc != CODE_NULL; nc = ctx->dict[nc].next)
+	// hash search
+	for (nc = ctx->hash[lzw_hash(code,c)]; nc != CODE_NULL; nc = ctx->dict[nc].next)
 	{
-		if (c == ctx->dict[nc].ch)
+		if (ctx->dict[nc].prev == code && ctx->dict[nc].ch == c) {
 			break;
+		}
 	}
 
 	return nc;
@@ -188,17 +179,14 @@ static int lzw_enc_addstr(lzw_enc_t *const ctx, int code, unsigned char c)
 	if (++ctx->max == CODE_NULL)
 		return CODE_NULL;
 
-	// add the new code into hash table
 	hash = lzw_hash(code, c);
-	if (ctx->hash[hash] == 0)
-		ctx->hash[hash] = ctx->max;
 
+	// add new code
 	ctx->dict[ctx->max].prev  = code;
-	ctx->dict[ctx->max].first = CODE_NULL;
-	ctx->dict[ctx->max].next  = ctx->dict[code].first;
+	ctx->dict[ctx->max].next  = ctx->hash[hash];
 	ctx->dict[ctx->max].ch    = c;
-
-	ctx->dict[code].first = ctx->max;
+	// add the new code into hash table
+	ctx->hash[hash] = ctx->max;
 #if DEBUG
 	printf("add code %x = %x + %c\n", ctx->max, code, c);
 #endif
