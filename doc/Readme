@@ -1,0 +1,126 @@
+clzw - Implementation of LZW data compression algorithm in C
+------------------------------------------------------------
+
+I will not describe here what LZW is and how it works - there is a plenty
+of information in the net. I suppose that you are quite familiar with C,
+algorithms and data structures.
+
+Implementation
+--------------
+Everything is written in C. There is two separate projects for encoder
+and decoder (I will call the compression part encoder, decompression -
+decoder) but they can be easily merged together to produce a library.
+Both projects share only one file - lzw.h.
+
+Encoder consists of files:
+lzw.h		- Common definitions and structurec for both emcoder and decoder.
+lzw-enc.c	- Encoder source, OS/application independent;
+encoder.c	- Encoder tool (OS/application dependent);
+
+Decoder consists of files:
+lzw.h		- Common definitions and structurec for both encoder and decoder.
+lzw-dec.c	- Decoder source, OS/application independent;
+decoder.c	- Decoder tool (OS/application dependent);
+
+The LZW code itself does not depend on any libraries, SDKs, OS calls.
+If you write your own application you do not need encoder.c,decoder.c
+they are present to create executables and as examples.
+
+The input/output streams are read/written via functions
+void     lzw_writebuf(void *stream, char *buf, unsigned size)
+unsigned lzw_readbuf (void *stream, char *buf, unsigned size)
+which the application should implement.
+For example an application that use buffered Posix IO:
+
+void lzw_writebuf(void *stream, char *buf, unsigned size)
+{
+	fwrite(buf, size, 1, (FILE*)stream);
+}
+
+unsigned lzw_readbuf(void *stream, char *buf, unsigned size)
+{
+	return fread(buf, 1, size, (FILE*)stream);
+}
+
+main.c:
+
+	FILE *fin;
+	FILE *fout;
+
+	fin  = fopen(argv[1], "rb");
+	fout = fopen(argv[2], "w+b");
+
+	lzw_enc_init(ctx, fout);
+	while (len = lzw_readbuf(fin, buf, sizeof(buf)))
+	{
+		lzw_encode(ctx, buf, len);
+	}
+	lzw_enc_end(ctx);
+
+	fclose(fin);
+	fclose(fout);
+
+Another example:
+
+void lzw_writebuf(void *stream, char *buf, unsigned size)
+{
+	write((int)stream, buf, size);
+}
+
+main.c:
+
+	int fdi;
+	int fdo;
+
+	fdi = open(argv[1], O_RDONLY, 0);
+	fdo = open(argv[2], O_CREAT|O_TRUNC|O_WRONLY|O_BINARY, S_IWRITE);
+
+	lzw_enc_init(ctx, (void*)fdo);
+	while (len = read(fdi, buf, sizeof(buf)))
+	{
+		lzw_encode(ctx, buf, len);
+	}
+	lzw_enc_end(ctx);
+
+	close(fdin);
+	close(fdout);
+
+As you can see the clzw code uses your function to write compressed stream.
+As for the reading you can actually implement it as you like.
+
+Details of LZW implementaion
+----------------------------
+The three key features reagarding compressed data format are:
+1. Raw compressed stream - no any header is added.
+2. Dynamic code size.
+3. When dictionary overflows the codec resets it to the initial state.
+
+Memory usage
+------------
+The dictionary size is static i.e. set during code compilation:
+#define DICT_SIZE	(1 << N)
+where N number of bits in the maximal code.
+
+Encoder context size = 8 * sizeof(int) + DICT_SIZE * sizeof(node_enc_t) + HASH_SIZE * sizeof(int) + 256 * sizeof(char)
+Decoder context size = 9 * sizeof(int) + DICT_SIZE * sizeof(node_dec_t) + DICT_SIZE * sizeof(char) + sizeof(char)
+
+if N = 20, sizeof(node_enc_t) = 12, sizeof(int) = 4, HASH_SIZE = DICT_SIZE:
+encoder size = 8*4 + 1,048,576*12 + 1,048,576*4 + 256 = 32 + 12,582,912 + 4,194,304 + 256
+	= 16,777,504 bytes
+decoder size = 9*4 + 1,048,576*8  + 1,048,576 + 1 = 37 + 8,388,608 + 1,048,576
+	= 9,437,221 bytes
+
+You can:
+- pack structures but it will decrease memory access speed.
+- decrease N but it will lower compression ratio.
+- decrease HASH_SIZE (should be power of 2) but it will decrease compression speed.
+
+Supported OS-es
+---------------
+At present this code was compiled and run on Windows, Makefile for Linux
+is provided but not tested. It is not difficult to port this code to any
+architecture, the only concern may be size of int type - I asume that it
+is 32 bit long.
+
+Regards,
+Vladimir Antonenko
