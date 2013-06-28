@@ -17,14 +17,13 @@ unsigned lzw_readbuf(void *stream, char *buf, unsigned size)
 lzw_enc_t lzw;
 
 /******************************************************************************
-**  lzw_encode
+**  main
 **  --------------------------------------------------------------------------
 **  Encodes input byte stream into LZW code stream.
 **  
 **  Arguments:
-**      ctx  - LZW context;
-**      fin  - input file;
-**      fout - output file;
+**      argv[1] - input file name;
+**      argv[2] - output file name;
 **
 **  Return: error code
 ******************************************************************************/
