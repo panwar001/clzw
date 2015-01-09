@@ -74,6 +74,8 @@ void lzw_dec_init(lzw_dec_t *ctx, void *stream)
 		ctx->dict[i].ch   = i;
 	}
 
+	ctx->bb.n     = 0; // bitbuffer init
+
 	ctx->code     = CODE_NULL;
 	ctx->max      = 255;
 	ctx->codesize = 8;
@@ -112,8 +114,6 @@ static void lzw_dec_reset(lzw_dec_t *const ctx)
 **  Arguments:
 **      ctx  - LZW context;
 **      code - code of the string (already in dictionary);
-**      buff - buffer for the string;
-**      size - the buffer size;
 **
 **  Return: the number of bytes in the string
 ******************************************************************************/
@@ -211,7 +211,7 @@ int lzw_decode(lzw_dec_t *ctx, char buf[], unsigned size)
 	{
 		int ncode;
 
-		// read a code from the input buffer
+		// read a code from the input buffer (ctx->inbuff[])
 		ncode = lzw_dec_readbits(ctx, ctx->codesize);
 #if DEBUG
 		printf("code %x (%d)\n", ncode, ctx->codesize);

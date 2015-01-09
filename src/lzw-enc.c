@@ -90,6 +90,8 @@ void lzw_enc_init(lzw_enc_t *ctx, void *stream)
 {
 	unsigned i;
 
+	ctx->bb.n     = 0; // bitbuffer init
+
 	ctx->code     = CODE_NULL; // non-existent code
 	ctx->max      = 255;
 	ctx->codesize = 8;
