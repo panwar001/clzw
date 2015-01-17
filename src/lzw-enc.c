@@ -1,4 +1,4 @@
-/******************************************************************************
+/******************************************************************************☺
 **  LZW encoder
 **  --------------------------------------------------------------------------
 **  
@@ -90,12 +90,12 @@ void lzw_enc_init(lzw_enc_t *ctx, void *stream)
 {
 	unsigned i;
 
-	ctx->bb.n     = 0; // bitbuffer init
-
 	ctx->code     = CODE_NULL; // non-existent code
 	ctx->max      = 255;
 	ctx->codesize = 8;
 	ctx->stream   = stream;
+	ctx->bb.n     = 0; // bit-buffer init
+	ctx->lzwn     = 0; // output code-buffer init
 
 	// clear hash table
 	for (i = 0; i < HASH_SIZE; i++)

@@ -22,6 +22,7 @@
 ******************************************************************************/
 #ifndef __LZW_H__
 
+// do not set DICT_SIZE > 24bit (32-bit bit-buffer is too short)
 #define DICT_SIZE	(1 << 20)
 #define CODE_NULL	DICT_SIZE
 #define HASH_SIZE	(DICT_SIZE)
@@ -30,10 +31,11 @@
 #define LZW_ERR_INPUT_BUF		-2
 #define LZW_ERR_WRONG_CODE		-3
 
+// bit-buffer
 typedef struct _bitbuffer
 {
-	unsigned buf;	
-	unsigned n;
+	unsigned long buf;		// bits
+	unsigned n;				// number of bits
 }
 bitbuffer_t;
 
@@ -62,11 +64,10 @@ typedef struct _lzw_enc
 	unsigned      codesize;			// number of bits in code
 	bitbuffer_t   bb;				// bit-buffer struct
 	void          *stream;			// pointer to the stream object
-	unsigned      lzwn;				// buffer byte counter
-	unsigned      lzwm;				// buffer size (decoder only)
+	unsigned      lzwn;				// output code-buffer byte counter
 	node_enc_t    dict[DICT_SIZE];	// code dictionary
 	int           hash[HASH_SIZE];	// hast table
-	unsigned char buff[256];		// output code buffer
+	unsigned char buff[256];		// output code-buffer
 }
 lzw_enc_t;
 
@@ -78,9 +79,9 @@ typedef struct _lzw_dec
 	unsigned      codesize;			// number of bits in code
 	bitbuffer_t   bb;				// bit-buffer struct
 	void          *stream;			// pointer to the stream object
-	unsigned      lzwn;				// input buffer byte counter
-	unsigned      lzwm;				// input buffer size
-	unsigned char *inbuff;		    // input code buffer
+	unsigned      lzwn;				// input code-buffer byte counter
+	unsigned      lzwm;				// input code-buffer size
+	unsigned char *inbuff;		    // input code-buffer
 	node_dec_t    dict[DICT_SIZE];	// code dictionary
 	unsigned char c;				// first char of the code
 	unsigned char buff[DICT_SIZE];	// output string buffer

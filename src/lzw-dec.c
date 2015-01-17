@@ -68,18 +68,17 @@ void lzw_dec_init(lzw_dec_t *ctx, void *stream)
 {
 	unsigned i;
 
+	ctx->code     = CODE_NULL;
+	ctx->max      = 255;
+	ctx->codesize = 8;
+	ctx->bb.n     = 0; // bitbuffer init
+	ctx->stream   = stream;
+
 	for (i = 0; i < 256; i++)
 	{
 		ctx->dict[i].prev = CODE_NULL;
 		ctx->dict[i].ch   = i;
 	}
-
-	ctx->bb.n     = 0; // bitbuffer init
-
-	ctx->code     = CODE_NULL;
-	ctx->max      = 255;
-	ctx->codesize = 8;
-	ctx->stream   = stream;
 }
 
 /******************************************************************************
@@ -203,9 +202,9 @@ int lzw_decode(lzw_dec_t *ctx, char buf[], unsigned size)
 {
 	if (!size) return 0;
 
-	ctx->inbuff = buf;
-	ctx->lzwn   = 0;
-	ctx->lzwm   = size;
+	ctx->inbuff = buf;	// save ptr to code-buffer
+	ctx->lzwn   = 0;	// current position in code-buffer
+	ctx->lzwm   = size;	// code-buffer data size
 
 	for (;;)
 	{
@@ -226,7 +225,7 @@ int lzw_decode(lzw_dec_t *ctx, char buf[], unsigned size)
 #endif
 			break;
 		}
-		else if (ncode <= ctx->max)
+		else if (ncode <= ctx->max) // known code
 		{
 			// output string for the new code from dictionary
 			ctx->c = lzw_dec_writestr(ctx, ncode);
